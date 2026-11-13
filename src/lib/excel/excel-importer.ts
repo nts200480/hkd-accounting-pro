@@ -37,9 +37,50 @@ function normalizeDateValue(rawVal: any): string {
 }
 
 /**
- * Đọc file Excel thông minh:
- * - Hỗ trợ cả File Mẫu Import chuẩn (Header ở dòng 1, không có cột STT)
- * - Hỗ trợ luôn cả trường hợp người dùng lấy File Xuất Excel (Header ở dòng 4 hoặc 5, có cột STT ở cột A) để Import lại
+ * Kiểm tra xem dòng hiện tại có phải là dòng tiêu đề báo cáo / dòng gộp ô (Merge Cells) hay không
+ */
+function isMetadataOrMergedTitleRow(row: ExcelJS.Row): boolean {
+  const cell1 = row.getCell(1);
+  const cell2 = row.getCell(2);
+
+  const val1 = String(extractCellValue(cell1.value) || '').trim();
+  const val2 = String(extractCellValue(cell2.value) || '').trim();
+  const lower1 = val1.toLowerCase();
+
+  // Nếu cột 1 trống hoàn toàn
+  if (!val1 && !val2) return true;
+
+  // Nếu dòng bị gộp ô ngang (A1:I1, A2:I2, A3:I3) -> ExcelJS trả về val1 === val2
+  if (cell1.isMerged || (val1 !== '' && val1 === val2)) {
+    return true;
+  }
+
+  // Chặn các từ khóa dòng tiêu đề báo cáo hoặc dòng tổng cuối bảng
+  const metadataPrefixes = [
+    'danh sách',
+    'bảng kê',
+    'tổng hợp',
+    'chi tiết công nợ',
+    'công ty:',
+    'hộ kinh doanh:',
+    'ngày xuất:',
+    'kỳ:',
+    'kỳ kê khai:',
+    'cộng số phát sinh',
+    'tổng cộng',
+    'số dư đầu kỳ',
+    'số dư cuối kỳ',
+  ];
+
+  if (metadataPrefixes.some((prefix) => lower1.startsWith(prefix))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Đọc file Excel và tự động loại bỏ phần tiêu đề báo cáo + cột STT
  */
 export async function parseExcelFile<T = Record<string, any>>(
   file: File,
@@ -59,15 +100,20 @@ export async function parseExcelFile<T = Record<string, any>>(
   const rows: T[] = [];
   const errors: string[] = [];
 
-  // 1. Tự động dò tìm dòng Header thực sự (quét từ dòng 1 đến dòng 10)
-  //    và kiểm tra xem cột A có phải là cột "STT" (do dùng file Xuất Excel) hay không
+  // Bước 1: Quét 15 dòng đầu tiên để tìm chính xác dòng Header và xác định có cột STT ở cột A hay không
   let headerRowNumber = 1;
-  let colOffset = 0; // Nếu cột A là 'STT' mà trong config không có 'STT', dịch sang phải 1 cột
+  let colOffset = 0;
 
-  const firstConfigHeader = config.columns[0]?.header.toLowerCase().trim() || '';
+  const firstConfigHeader = (config.columns[0]?.header || '').toLowerCase().trim();
 
-  for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
+  for (let r = 1; r <= Math.min(15, worksheet.rowCount); r++) {
     const row = worksheet.getRow(r);
+
+    // Bỏ qua ngay nếu là dòng tiêu đề gộp ô (DANH SÁCH ĐỐI TÁC, Công ty:..., Ngày xuất:...)
+    if (isMetadataOrMergedTitleRow(row)) {
+      continue;
+    }
+
     const cellA = String(extractCellValue(row.getCell(1).value) || '')
       .toLowerCase()
       .trim();
@@ -75,41 +121,42 @@ export async function parseExcelFile<T = Record<string, any>>(
       .toLowerCase()
       .trim();
 
-    // Trường hợp 1: File Mẫu Import chuẩn (Cột A khớp với cột đầu tiên trong config)
-    if (cellA && (cellA === firstConfigHeader || firstConfigHeader.includes(cellA))) {
+    // Trường hợp A: File xuất Excel có cột A là 'STT' (VD: dòng 5: STT | Tên | Mã số thuế...)
+    if (cellA === 'stt' && cellB !== '') {
+      headerRowNumber = r;
+      colOffset = 1; // Dịch sang phải 1 cột để bỏ qua cột STT
+      break;
+    }
+
+    // Trường hợp B: File mẫu Import chuẩn không có cột STT (VD: dòng 1: Tên đối tác | Mã số thuế...)
+    if (
+      cellA !== '' &&
+      (cellA === firstConfigHeader ||
+        firstConfigHeader.includes(cellA) ||
+        cellA.includes(firstConfigHeader))
+    ) {
       headerRowNumber = r;
       colOffset = 0;
       break;
     }
-
-    // Trường hợp 2: Người dùng chọn File Xuất Excel (Cột A là 'STT', Cột B là 'Tên' / 'Tên đối tác' / 'Mã hàng'...)
-    if (cellA === 'stt' && cellB) {
-      headerRowNumber = r;
-      colOffset = 1; // Bỏ qua cột A (STT), đọc dữ liệu từ cột B trở đi
-      break;
-    }
   }
 
-  // 2. Đọc dữ liệu từ dòng ngay sau dòng Header
+  // Bước 2: Đọc dữ liệu từ dòng ngay sau dòng Header
   worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    // Bỏ qua toàn bộ các dòng từ dòng Header trở lên
     if (rowNumber <= headerRowNumber) return;
 
-    // Bỏ qua các dòng tổng cộng cuối bảng nếu người dùng lấy file báo cáo để import
-    const firstCellText = String(extractCellValue(row.getCell(1).value) || '')
-      .toLowerCase()
-      .trim();
-    const secondCellText = String(extractCellValue(row.getCell(1 + colOffset).value) || '')
+    // Bỏ qua nếu gặp dòng tiêu đề gộp hoặc dòng tổng cộng
+    if (isMetadataOrMergedTitleRow(row)) return;
+
+    const firstDataCell = String(
+      extractCellValue(row.getCell(1 + colOffset).value) || ''
+    )
       .toLowerCase()
       .trim();
 
-    if (
-      firstCellText.startsWith('cộng số phát sinh') ||
-      firstCellText.startsWith('tổng cộng') ||
-      firstCellText.startsWith('số dư') ||
-      secondCellText.startsWith('cộng số phát sinh') ||
-      secondCellText.startsWith('tổng cộng') ||
-      secondCellText.startsWith('số dư')
-    ) {
+    // Phòng hờ trường hợp có dòng Header lặp lại
+    if (firstDataCell === 'tên' || firstDataCell === 'tên đối tác' || firstDataCell === 'stt') {
       return;
     }
 
@@ -163,8 +210,7 @@ export async function parseExcelFile<T = Record<string, any>>(
       }
     });
 
-    // Chỉ kiểm tra trường bắt buộc và thêm vào danh sách nếu dòng đó thực sự có dữ liệu
-    // (Tránh lỗi khi file Xuất Excel có 20 dòng đánh sẵn STT từ 1->20 nhưng các cột thông tin để trống)
+    // Chỉ lấy dòng có dữ liệu thực sự (bỏ qua các dòng chỉ đánh sẵn số STT nhưng thông tin trống)
     const hasMeaningfulData = Object.values(rowData).some(
       (v) => v !== '' && v !== 0 && v !== null && v !== undefined
     );
