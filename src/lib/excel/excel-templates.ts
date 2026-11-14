@@ -1,7 +1,7 @@
 // src/lib/excel/excel-templates.ts
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { PARTNER_TYPES, EXPENSE_TYPES } from '@/constants/hkd-constants';
+import { PARTNER_TYPES, EXPENSE_TYPES, REVENUE_TYPES } from '@/constants/hkd-constants';
 
 export interface ExcelColumnRule {
   key: string;
@@ -34,15 +34,11 @@ function getExcelColumnLetter(colIndex: number): string {
   return letter;
 }
 
-/**
- * Tạo và tải xuống file mẫu Excel chuẩn (3 sheets: Data, _dropdown_data, Hướng dẫn nhập)
- */
 export async function downloadExcelTemplate(config: ExcelTemplateConfig): Promise<void> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'FDI HKD Accounting Pro';
   workbook.created = new Date();
 
-  // 1. Sheet 1: Nhập dữ liệu chính
   const dataSheet = workbook.addWorksheet(config.dataSheetName);
   dataSheet.columns = config.columns.map((col) => ({
     header: col.header,
@@ -60,7 +56,6 @@ export async function downloadExcelTemplate(config: ExcelTemplateConfig): Promis
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   headerRow.height = 28;
 
-  // 2. Sheet 2: _dropdown_data
   const dropdownColumns = config.columns
     .map((col, idx) => ({ ...col, colIndex: idx + 1 }))
     .filter((col) => col.dropdownOptions && col.dropdownOptions.length > 0);
@@ -73,7 +68,7 @@ export async function downloadExcelTemplate(config: ExcelTemplateConfig): Promis
       const dColLetter = getExcelColumnLetter(dColIndex);
       const options = col.dropdownOptions || [];
 
-      dropdownSheet.getColumn(dColIndex).width = 48;
+      dropdownSheet.getColumn(dColIndex).width = 50;
 
       options.forEach((optValue, rowIdx) => {
         dropdownSheet.getCell(rowIdx + 1, dColIndex).value = optValue;
@@ -89,22 +84,7 @@ export async function downloadExcelTemplate(config: ExcelTemplateConfig): Promis
           formulae: [formulaRange],
           showErrorMessage: true,
           errorTitle: 'Giá trị không hợp lệ',
-          error: `Vui lòng chọn một giá trị trong danh sách thả xuống của cột "${col.header}".`,
-        };
-      }
-    });
-  }
-
-  // 3. Sheet 3: Hướng dẫn nhập
-  const guideSheet = workbook.addWorksheet('Hướng dẫn nhập');
-  guideSheet.getColumn(1).width = 105;
-
-  const titleCell = guideSheet.getCell('A1');
-  titleCell.value = config.guideTitle;
-  titleCell.font = { bold: true, size: 12, color: { argb: 'FF0D47A1' } };
-
-  config.guideLines.forEach((line, index) => {
-    const cell = guideSheet.getCell(`A${index + 2}`);
+          error: `Vui lòng chọn một giá trị trong danh sách thả xuống của cột "${col.header}".`, }; } }); }  const guideSheet = workbook.addWorksheet('Hướng dẫn nhập'); guideSheet.getColumn(1).width = 105;  const titleCell = guideSheet.getCell('A1'); titleCell.value = config.guideTitle; titleCell.font = { bold: true, size: 12, color: { argb: 'FF0D47A1' } };  config.guideLines.forEach((line, index) => { const cell = guideSheet.getCell(`A${index + 2}`);
     cell.value = line;
     cell.font = { size: 11 };
   });
@@ -116,9 +96,6 @@ export async function downloadExcelTemplate(config: ExcelTemplateConfig): Promis
   saveAs(blob, config.fileName);
 }
 
-/**
- * Cấu hình File Mẫu Import Đối tác (3 sheets: Danh sách đối tác, _dropdown_data, Hướng dẫn nhập)
- */
 export const PARTNER_EXCEL_TEMPLATE_CONFIG: ExcelTemplateConfig = {
   fileName: 'mau-them-nhieu-doi-tac.xlsx',
   dataSheetName: 'Danh sách đối tác',
@@ -128,8 +105,8 @@ export const PARTNER_EXCEL_TEMPLATE_CONFIG: ExcelTemplateConfig = {
     '1. Nhập dữ liệu ở sheet Danh sách đối tác, bắt đầu từ dòng 2. Không đổi tên sheet, không sửa dòng tiêu đề 1.',
     '2. Tên đối tác: bắt buộc nhập.',
     '3. Mã số thuế: tùy chọn, nhập chuỗi mã số thuế hoặc CCCD của đối tác.',
-    '4. Loại đối tác: chọn 1 trong 3 giá trị từ danh sách dropdown ở cột C (Khách hàng, Nhà cung cấp, Khách hàng & NCC). Nếu để trống mặc định là Khách hàng & NCC.',
-    '5. Cài đặt loại chi phí: tùy chọn, chọn 1 trong 7 giá trị từ danh sách dropdown ở cột D để tự động gán chi phí khi mua hàng.',
+    '4. Loại đối tác: chọn 1 trong 3 giá trị từ danh sách dropdown ở cột C (Khách hàng, Nhà cung cấp, Khách hàng & NCC).',
+    '5. Cài đặt loại chi phí: tùy chọn, chọn 1 trong 7 giá trị từ danh sách dropdown ở cột D.',
     '6. Số tài khoản, Người liên hệ, Người đại diện pháp luật, Địa chỉ: tùy chọn.',
   ],
   columns: [
@@ -161,5 +138,47 @@ export const PARTNER_EXCEL_TEMPLATE_CONFIG: ExcelTemplateConfig = {
       type: 'string',
     },
     { key: 'address', header: 'Địa chỉ', width: 42, required: false, type: 'string' },
+  ],
+};
+
+export const PRODUCT_CATEGORIES = ['Hàng hóa', 'Dịch vụ', 'Thành phẩm', 'Nguyên vật liệu'] as const;
+
+export const PRODUCT_EXCEL_TEMPLATE_CONFIG: ExcelTemplateConfig = {
+  fileName: 'mau-them-nhieu-hang-hoa.xlsx',
+  dataSheetName: 'Danh sách hàng hóa',
+  includeDropdownSheet: true,
+  guideTitle: 'HƯỚNG DẪN NHẬP HÀNG HÓA / DỊCH VỤ',
+  guideLines: [
+    '1. Nhập dữ liệu ở sheet Danh sách hàng hóa, bắt đầu từ dòng 2. Không đổi tên sheet, không sửa dòng tiêu đề 1.',
+    '2. Mã hàng hóa: bắt buộc, viết liền không khoảng trắng (VD: HDPE, PET, PP, PVC).',
+    '3. Mã HH theo HĐ: tùy chọn, mã ánh xạ với hóa đơn điện tử.',
+    '4. Tên hàng hóa: bắt buộc nhập.',
+    '5. Đơn vị tính: nhập tên đơn vị tính (VD: kg, cái, thùng).',
+    '6. Phân loại: chọn trong danh sách dropdown (Hàng hóa, Dịch vụ, Thành phẩm, Nguyên vật liệu).',
+    '7. Loại thuế suất bán ra: chọn 1 trong 8 mức thuế suất chuẩn từ dropdown ở cột F.',
+    '8. Số lượng tồn đầu: tùy chọn, chỉ nhập số.',
+  ],
+  columns: [
+    { key: 'code', header: 'Mã hàng hóa', width: 20, required: true, type: 'string' },
+    { key: 'invoice_code', header: 'Mã HH theo HĐ', width: 20, required: false, type: 'string' },
+    { key: 'name', header: 'Tên hàng hóa', width: 36, required: true, type: 'string' },
+    { key: 'unit_name', header: 'Đơn vị tính', width: 16, required: false, type: 'string' },
+    {
+      key: 'category',
+      header: 'Phân loại',
+      width: 20,
+      required: false,
+      type: 'string',
+      dropdownOptions: PRODUCT_CATEGORIES,
+    },
+    {
+      key: 'default_revenue_type',
+      header: 'Loại thuế suất bán ra',
+      width: 48,
+      required: false,
+      type: 'string',
+      dropdownOptions: REVENUE_TYPES,
+    },
+    { key: 'current_stock', header: 'Số lượng tồn', width: 18, required: false, type: 'number' },
   ],
 };

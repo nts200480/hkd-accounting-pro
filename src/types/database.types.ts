@@ -48,6 +48,8 @@ export interface WarehouseItem {
   updated_at?: string;
 }
 
+export type ProductCategory = 'Hàng hóa' | 'Dịch vụ' | 'Thành phẩm' | 'Nguyên vật liệu';
+
 export interface ProductItem {
   id: string;
   household_id: string;
@@ -56,12 +58,55 @@ export interface ProductItem {
   name: string;
   unit_id: string | null;
   unit_name: string | null;
-  category: 'Hàng hóa' | 'Dịch vụ' | 'Thành phẩm' | 'Nguyên vật liệu';
-  default_revenue_type: RevenueType | null;
+  category: ProductCategory;
+  default_revenue_type: RevenueType | null | '';
   is_excise_tax: boolean;
   is_ecommerce: boolean;
   is_aggregated: boolean;
   current_stock: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductFormRow {
+  code: string;
+  invoice_code: string;
+  name: string;
+  unit_name: string;
+  category: ProductCategory;
+  default_revenue_type: RevenueType | '';
+  current_stock: number;
+  is_excise_tax: boolean;
+  is_ecommerce: boolean;
+  is_aggregated: boolean;
+}
+
+export interface ProductConversionItem {
+  id: string;
+  household_id: string;
+  source_product_id: string;
+  source_product_code?: string;
+  source_product_name?: string;
+  source_quantity: number;
+  source_unit_name: string | null;
+  target_product_id: string;
+  target_product_code?: string;
+  target_product_name?: string;
+  target_quantity: number;
+  target_unit_name: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BankAccountItem {
+  id: string;
+  household_id: string;
+  account_name: string;
+  account_number: string;
+  bank_name: string;
+  branch_name: string | null;
+  is_default: boolean;
   created_at?: string;
   updated_at?: string;
 }
